@@ -1,0 +1,15 @@
+{
+  "name": "moltbank-teller",
+  "version": "1.0.0",
+  "description": "Moltbank Teller Agent - Payment detection and account queue management",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.0",
+    "ethers": "^6.13.0"
+  }
+}
