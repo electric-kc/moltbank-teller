@@ -36,6 +36,12 @@ export const config = {
     premium: 5,
     vip: 10,
   },
+  points: {
+    gas_bundle: 250,
+    regular: 1000,
+    premium: 5000,
+    vip: 15000,
+  },
 };
 
 // Validate required config on startup

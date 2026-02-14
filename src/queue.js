@@ -6,6 +6,7 @@ import {
   markQueueFailed,
   createAccount,
   logTransaction,
+  awardPoints,
 } from './db.js';
 
 let isProcessing = false;
@@ -64,14 +65,14 @@ export async function processQueue() {
     try {
       // ─── Gas Bundle Only (existing account) ───
       if (next.tier === 'gas_bundle') {
-        // TODO: Look up existing account address for this agent
         console.log(`[QUEUE] Delivering gas bundle for ${next.agent_id}`);
-        await sendGasBundle(next.agent_id);
+        await sendGasBundle(next.agent_id, config.gasBundle.perChain.standalone);
+        await awardPoints(next.agent_id, config.points.gas_bundle, 'gas_bundle_purchase');
         await markQueueCompleted(next.id);
         console.log(`[QUEUE] ✓ Gas bundle delivered for ${next.agent_id}`);
       }
 
-      // ─── New Account (Regular or Premium) ───
+      // ─── New Account (Regular, Premium, or VIP) ───
       else {
         // 1. Create account on NXT Layer
         const nxtAddress = await createNxtLayerAccount(next.agent_id);
@@ -95,7 +96,10 @@ export async function processQueue() {
           console.log(`[QUEUE] ${next.tier.toUpperCase()} perks delivered for ${next.agent_id}`);
         }
 
-        // 6. Mark as completed
+        // 6. Award Moltbank Points
+        await awardPoints(next.agent_id, config.points[next.tier], `${next.tier}_account_opened`);
+
+        // 7. Mark as completed
         await markQueueCompleted(next.id);
         console.log(`[QUEUE] ✓ Completed: ${next.agent_id} → ${nxtAddress}`);
       }

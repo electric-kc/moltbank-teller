@@ -136,7 +136,7 @@ export async function getQueueStats() {
 // ─── Account Operations ───
 
 export async function createAccount(agentId, tier, nxtLayerAddress) {
-  const isPremium = tier === 'premium';
+  const isPremiumOrVip = tier === 'premium' || tier === 'vip';
 
   const { data, error } = await supabase
     .from('accounts')
@@ -144,8 +144,8 @@ export async function createAccount(agentId, tier, nxtLayerAddress) {
       agent_id: agentId,
       tier,
       nxt_layer_address: nxtLayerAddress,
-      nft_entitled: isPremium,
-      gas_bundle_sent: isPremium,
+      nft_entitled: isPremiumOrVip,
+      gas_bundle_sent: isPremiumOrVip,
       last_active: new Date().toISOString(),
     })
     .select()
@@ -209,4 +209,45 @@ export async function isPaymentProcessed(txHash) {
     .single();
 
   return !!data;
+}
+
+// ─── Points / Leaderboard ───
+
+export async function awardPoints(agentId, amount, reason) {
+  // Log the points event
+  const { error: pointsError } = await supabase
+    .from('points')
+    .insert({ agent_id: agentId, amount, reason });
+
+  if (pointsError) {
+    console.error(`[POINTS] Failed to log points: ${pointsError.message}`);
+    return;
+  }
+
+  // Upsert leaderboard
+  const { data: existing } = await supabase
+    .from('leaderboard')
+    .select('total_points, tier')
+    .eq('agent_id', agentId)
+    .single();
+
+  if (existing) {
+    await supabase
+      .from('leaderboard')
+      .update({
+        total_points: existing.total_points + amount,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('agent_id', agentId);
+  } else {
+    await supabase
+      .from('leaderboard')
+      .insert({
+        agent_id: agentId,
+        total_points: amount,
+        updated_at: new Date().toISOString(),
+      });
+  }
+
+  console.log(`[POINTS] +${amount} MBPs → ${agentId} (${reason})`);
 }
