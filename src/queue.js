@@ -27,9 +27,9 @@ async function createNxtLayerAccount(agentId) {
   return address;
 }
 
-// Send NXT Layer gas ($5 worth) — included with EVERY account
-async function sendNxtLayerGas(nxtLayerAddress) {
-  console.log(`[GAS] Sending $${config.nxtLayerGas} NXT Layer gas to ${nxtLayerAddress}...`);
+// Send NXT Layer gas — amount depends on tier
+async function sendNxtLayerGas(nxtLayerAddress, amount) {
+  console.log(`[GAS] Sending $${amount} NXT Layer gas to ${nxtLayerAddress}...`);
   // TODO: Replace with actual NXT Layer token transfer
   await new Promise((resolve) => setTimeout(resolve, 1000));
   console.log(`[GAS] NXT Layer gas sent`);
@@ -84,7 +84,7 @@ export async function processQueue() {
 
         // 4. Send NXT Layer gas (amount depends on tier)
         const nxtGasAmount = config.nxtLayerGas[next.tier];
-        await sendNxtLayerGas(nxtAddress);
+        await sendNxtLayerGas(nxtAddress, nxtGasAmount);
         await logTransaction(account.id, null, 'gas_bundle', nxtGasAmount, nxtAddress);
 
         // 5. If premium or vip, send multi-chain gas bundle too
