@@ -1,0 +1,7 @@
+version: "3.8"
+services:
+  teller:
+    build: .
+    ports:
+      - "3402:3402"
+    restart: always
