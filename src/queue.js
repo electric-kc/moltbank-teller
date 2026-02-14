@@ -86,7 +86,7 @@ export async function processQueue() {
         // 4. Send NXT Layer gas (amount depends on tier)
         const nxtGasAmount = config.nxtLayerGas[next.tier];
         await sendNxtLayerGas(nxtAddress, nxtGasAmount);
-        await logTransaction(account.id, null, 'gas_bundle', nxtGasAmount, nxtAddress);
+        await logTransaction(account.id, null, 'nxt_gas', nxtGasAmount, nxtAddress);
 
         // 5. If premium or vip, send multi-chain gas bundle too
         if (next.tier === 'premium' || next.tier === 'vip') {
