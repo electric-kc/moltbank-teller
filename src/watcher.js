@@ -52,7 +52,9 @@ export async function checkForPayments() {
 
       // Determine tier based on amount
       let tier = null;
-      if (amount >= config.tiers.premium.amount) {
+      if (amount >= config.tiers.vip.amount) {
+        tier = 'vip';
+      } else if (amount >= config.tiers.premium.amount) {
         tier = 'premium';
       } else if (amount >= config.tiers.regular.amount) {
         tier = 'regular';

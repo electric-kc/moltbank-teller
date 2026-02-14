@@ -35,10 +35,10 @@ async function sendNxtLayerGas(nxtLayerAddress) {
   console.log(`[GAS] NXT Layer gas sent`);
 }
 
-// Send multi-chain gas bundle ($2.50 per chain)
-async function sendGasBundle(nxtLayerAddress) {
+// Send multi-chain gas bundle (amount per chain varies by tier)
+async function sendGasBundle(nxtLayerAddress, perChainAmount) {
   for (const chain of config.gasBundle.chains) {
-    console.log(`[GAS] Sending $${config.gasBundle.perChain} ${chain} gas to ${nxtLayerAddress}...`);
+    console.log(`[GAS] Sending $${perChainAmount} ${chain} gas to ${nxtLayerAddress}...`);
     // TODO: Replace with actual gas delivery per chain
     await new Promise((resolve) => setTimeout(resolve, 500));
     console.log(`[GAS] ${chain} gas sent`);
@@ -82,15 +82,17 @@ export async function processQueue() {
         // 3. Log the payment transaction
         await logTransaction(account.id, next.payment_tx, 'payment', next.amount, config.chain.safeAddress);
 
-        // 4. Send NXT Layer gas (every account gets $5)
+        // 4. Send NXT Layer gas (amount depends on tier)
+        const nxtGasAmount = config.nxtLayerGas[next.tier];
         await sendNxtLayerGas(nxtAddress);
-        await logTransaction(account.id, null, 'gas_bundle', config.nxtLayerGas, nxtAddress);
+        await logTransaction(account.id, null, 'gas_bundle', nxtGasAmount, nxtAddress);
 
-        // 5. If premium, send multi-chain gas bundle too
-        if (next.tier === 'premium') {
-          await sendGasBundle(nxtAddress);
-          await logTransaction(account.id, null, 'gas_bundle', config.gasBundle.perChain * config.gasBundle.chains.length, nxtAddress);
-          console.log(`[QUEUE] Premium perks delivered for ${next.agent_id}`);
+        // 5. If premium or vip, send multi-chain gas bundle too
+        if (next.tier === 'premium' || next.tier === 'vip') {
+          const perChainAmount = config.gasBundle.perChain[next.tier];
+          await sendGasBundle(nxtAddress, perChainAmount);
+          await logTransaction(account.id, null, 'gas_bundle', perChainAmount * config.gasBundle.chains.length, nxtAddress);
+          console.log(`[QUEUE] ${next.tier.toUpperCase()} perks delivered for ${next.agent_id}`);
         }
 
         // 6. Mark as completed

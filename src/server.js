@@ -58,8 +58,8 @@ async function handleAccountOpen(req, res) {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const tier = url.searchParams.get('tier') || 'regular';
 
-  if (tier !== 'regular' && tier !== 'premium') {
-    return json(res, 400, { error: 'Invalid tier. Use "regular" or "premium".' });
+  if (tier !== 'regular' && tier !== 'premium' && tier !== 'vip') {
+    return json(res, 400, { error: 'Invalid tier. Use "regular", "premium", or "vip".' });
   }
 
   const body = await parseBody(req);
@@ -69,10 +69,12 @@ async function handleAccountOpen(req, res) {
   // No payment proof? Return 402
   if (!paymentTx) {
     const amount = config.tiers[tier].amount;
-    const description = tier === 'premium'
-      ? `Premium Account: NXT Layer wallet, 5 chain addresses (BTC, ETH, XRP, SOL, BASE), $5 NXT Layer gas, $12.50 gas bundle (5 chains), priority queue, NFT entitlement`
-      : `Regular Account: NXT Layer wallet, 5 chain addresses (BTC, ETH, XRP, SOL, BASE), $5 NXT Layer gas`;
-    return send402(res, amount, description);
+    const descriptions = {
+      regular: `Regular Account: NXT Layer wallet, 5 chain addresses (BTC, ETH, XRP, SOL, BASE), $${config.nxtLayerGas.regular} NXT Layer gas`,
+      premium: `Premium Account: NXT Layer wallet, 5 chain addresses (BTC, ETH, XRP, SOL, BASE), $${config.nxtLayerGas.premium} NXT Layer gas, $12.50 gas bundle (5 chains), priority queue, NFT entitlement`,
+      vip: `VIP Account: NXT Layer wallet, 5 chain addresses (BTC, ETH, XRP, SOL, BASE), $${config.nxtLayerGas.vip} NXT Layer gas, $25 gas bundle (5 chains), instant queue (front of line), VIP NFT`,
+    };
+    return send402(res, amount, descriptions[tier]);
   }
 
   // Has payment proof — verify and queue
@@ -92,22 +94,31 @@ async function handleAccountOpen(req, res) {
 
   const stats = await getQueueStats();
 
+  const includesMap = {
+    regular: {
+      nxt_layer_gas: `$${config.nxtLayerGas.regular}`,
+    },
+    premium: {
+      nxt_layer_gas: `$${config.nxtLayerGas.premium}`,
+      gas_bundle: config.gasBundle.chains.map((c) => `$${config.gasBundle.perChain.premium} ${c}`),
+      priority_queue: true,
+      nft_entitlement: true,
+    },
+    vip: {
+      nxt_layer_gas: `$${config.nxtLayerGas.vip}`,
+      gas_bundle: config.gasBundle.chains.map((c) => `$${config.gasBundle.perChain.vip} ${c}`),
+      instant_queue: true,
+      vip_nft: true,
+    },
+  };
+
   return json(res, 202, {
     status: 'queued',
     tier,
     position: queueEntry.position,
     agents_ahead: stats.pending - 1,
     estimated_wait_minutes: (stats.pending - 1) * (config.teller.queueCooldown / 60000),
-    includes: tier === 'premium'
-      ? {
-          nxt_layer_gas: `$${config.nxtLayerGas}`,
-          gas_bundle: config.gasBundle.chains.map((c) => `$${config.gasBundle.perChain} ${c}`),
-          priority_queue: true,
-          nft_entitlement: true,
-        }
-      : {
-          nxt_layer_gas: `$${config.nxtLayerGas}`,
-        },
+    includes: includesMap[tier],
     message: `Account queued at position ${queueEntry.position}. You will receive your wallet details once processed.`,
   });
 }
@@ -162,6 +173,7 @@ async function handleQueueStatus(req, res) {
     pricing: {
       regular_account: `${config.tiers.regular.amount} USDC`,
       premium_account: `${config.tiers.premium.amount} USDC`,
+      vip_account: `${config.tiers.vip.amount} USDC`,
       gas_bundle: `${config.gasBundle.price} USDC`,
     },
     supported_chains: config.gasBundle.chains,
@@ -204,6 +216,7 @@ export function startServer() {
     console.log(`[HTTP] Teller API running on port ${PORT}`);
     console.log(`[HTTP] POST /account/open?tier=regular  → 10 USDC`);
     console.log(`[HTTP] POST /account/open?tier=premium  → 50 USDC`);
+    console.log(`[HTTP] POST /account/open?tier=vip      → 100 USDC`);
     console.log(`[HTTP] POST /gas-bundle                 → 15 USDC`);
     console.log(`[HTTP] GET  /queue/status`);
     console.log(`[HTTP] GET  /health`);

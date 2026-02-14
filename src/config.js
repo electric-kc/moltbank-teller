@@ -19,13 +19,23 @@ export const config = {
   tiers: {
     regular: { amount: 10, label: 'regular' },
     premium: { amount: 50, label: 'premium' },
+    vip: { amount: 100, label: 'vip' },
   },
   gasBundle: {
     price: 15,
-    perChain: 2.5,
+    perChain: {
+      regular: 0,
+      premium: 2.5,
+      vip: 5,
+      standalone: 2.5,
+    },
     chains: ['BTC', 'ETH', 'XRP', 'SOL', 'BASE'],
   },
-  nxtLayerGas: 5, // $5 USDC of NXT Layer gas included with every account
+  nxtLayerGas: {
+    regular: 5,
+    premium: 5,
+    vip: 10,
+  },
 };
 
 // Validate required config on startup

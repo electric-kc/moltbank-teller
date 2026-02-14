@@ -22,21 +22,37 @@ export async function addToQueue(paymentTx, agentId, tier, amount) {
 
   const position = (last?.position || 0) + 1;
 
-  // Premium jumps to front: find lowest pending position and go before it
+  // Premium jumps ahead of regular, VIP jumps ahead of everything
   let finalPosition = position;
-  if (tier === 'premium') {
-    const { data: firstPending } = await supabase
+  if (tier === 'vip') {
+    // VIP goes to absolute front — only behind other VIPs
+    const { data: firstNonVip } = await supabase
       .from('queue')
       .select('position')
       .eq('status', 'pending')
+      .neq('tier', 'vip')
       .order('position', { ascending: true })
       .limit(1)
       .single();
 
-    if (firstPending) {
-      // Bump all pending entries up by 1
-      await supabase.rpc('bump_queue_positions', { from_pos: firstPending.position });
-      finalPosition = firstPending.position;
+    if (firstNonVip) {
+      await supabase.rpc('bump_queue_positions', { from_pos: firstNonVip.position });
+      finalPosition = firstNonVip.position;
+    }
+  } else if (tier === 'premium') {
+    // Premium goes ahead of regular, but behind VIPs
+    const { data: firstRegular } = await supabase
+      .from('queue')
+      .select('position')
+      .eq('status', 'pending')
+      .eq('tier', 'regular')
+      .order('position', { ascending: true })
+      .limit(1)
+      .single();
+
+    if (firstRegular) {
+      await supabase.rpc('bump_queue_positions', { from_pos: firstRegular.position });
+      finalPosition = firstRegular.position;
     }
   }
 
