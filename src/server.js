@@ -186,6 +186,32 @@ async function handleHealth(req, res) {
   return json(res, 200, { status: 'online', agent: config.teller.agentName, timestamp: new Date().toISOString() });
 }
 
+async function handleAccountInfo(req, res) {
+  const url = new URL(req.url, `http://localhost:${PORT}`);
+  const agentId = url.searchParams.get('agent_id');
+
+  if (!agentId) {
+    return json(res, 400, { error: 'Missing agent_id parameter' });
+  }
+
+  const { getAccountByAgentId } = await import('./db.js');
+  const account = await getAccountByAgentId(agentId);
+
+  if (!account) {
+    return json(res, 404, { error: 'Account not found' });
+  }
+
+  return json(res, 200, {
+    agent_id: account.agent_id,
+    tier: account.tier,
+    nxt_layer_address: account.nxt_layer_address,
+    referral_code: account.referral_code,
+    referral_count: account.referral_count,
+    referral_cap: account.referral_cap,
+    created_at: account.created_at,
+  });
+}
+
 // ─── Router ───
 
 const server = http.createServer(async (req, res) => {
@@ -201,6 +227,9 @@ const server = http.createServer(async (req, res) => {
     }
     if (path === '/queue/status' && req.method === 'GET') {
       return await handleQueueStatus(req, res);
+    }
+    if (path === '/account/info' && req.method === 'GET') {
+      return await handleAccountInfo(req, res);
     }
     if (path === '/health' && req.method === 'GET') {
       return await handleHealth(req, res);
@@ -220,6 +249,7 @@ export function startServer() {
     console.log(`[HTTP] POST /account/open?tier=premium  → 50 USDC`);
     console.log(`[HTTP] POST /account/open?tier=vip      → 100 USDC`);
     console.log(`[HTTP] POST /gas-bundle                 → 15 USDC`);
+    console.log(`[HTTP] GET  /account/info?agent_id=0x...`);
     console.log(`[HTTP] GET  /queue/status`);
     console.log(`[HTTP] GET  /health`);
   });

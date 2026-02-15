@@ -177,6 +177,19 @@ export async function createAccount(agentId, tier, nxtLayerAddress, referralCode
   return data;
 }
 
+export async function getAccountByAgentId(agentId) {
+  const { data, error } = await supabase
+    .from('accounts')
+    .select('*')
+    .eq('agent_id', agentId)
+    .single();
+
+  if (error && error.code !== 'PGRST116') {
+    throw new Error(`[DB] Account lookup error: ${error.message}`);
+  }
+  return data || null;
+}
+
 // ─── Transaction Logging ───
 
 export async function logTransaction(accountId, paymentTx, type, amount, destination) {
