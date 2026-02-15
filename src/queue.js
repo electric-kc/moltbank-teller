@@ -78,7 +78,7 @@ export async function processQueue() {
         const nxtAddress = await createNxtLayerAccount(next.agent_id);
 
         // 2. Save account to Supabase
-        const account = await createAccount(next.agent_id, next.tier, nxtAddress);
+        const account = await createAccount(next.agent_id, next.tier, nxtAddress, next.referral_code);
 
         // 3. Log the payment transaction
         await logTransaction(account.id, next.payment_tx, 'payment', next.amount, config.chain.safeAddress);

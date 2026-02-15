@@ -42,6 +42,15 @@ export const config = {
     premium: 5000,
     vip: 15000,
   },
+  referral: {
+    usdcPercent: 0.10,
+    points: {
+      regular: 250,
+      premium: 1000,
+      vip: 2500,
+    },
+    maxPerAccount: 50,
+  },
 };
 
 // Validate required config on startup

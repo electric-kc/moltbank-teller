@@ -11,7 +11,7 @@ export function initSupabase() {
 
 // ─── Queue Operations ───
 
-export async function addToQueue(paymentTx, agentId, tier, amount) {
+export async function addToQueue(paymentTx, agentId, tier, amount, referralCode = null) {
   // Get current max position
   const { data: last } = await supabase
     .from('queue')
@@ -65,6 +65,7 @@ export async function addToQueue(paymentTx, agentId, tier, amount) {
       amount,
       position: finalPosition,
       status: 'pending',
+      referral_code: referralCode,
     })
     .select()
     .single();
@@ -135,8 +136,20 @@ export async function getQueueStats() {
 
 // ─── Account Operations ───
 
-export async function createAccount(agentId, tier, nxtLayerAddress) {
+export async function createAccount(agentId, tier, nxtLayerAddress, referralCode = null) {
   const isPremiumOrVip = tier === 'premium' || tier === 'vip';
+
+  // Generate unique referral code: first 8 chars of agent + random 4
+  const myReferralCode = `${agentId.slice(2, 10).toUpperCase()}${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+
+  // Validate referral code if provided
+  let referredBy = null;
+  if (referralCode) {
+    const referrer = await validateReferral(agentId, referralCode);
+    if (referrer) {
+      referredBy = referrer.agent_id;
+    }
+  }
 
   const { data, error } = await supabase
     .from('accounts')
@@ -147,12 +160,20 @@ export async function createAccount(agentId, tier, nxtLayerAddress) {
       nft_entitled: isPremiumOrVip,
       gas_bundle_sent: isPremiumOrVip,
       last_active: new Date().toISOString(),
+      referral_code: myReferralCode,
+      referred_by: referredBy,
     })
     .select()
     .single();
 
   if (error) throw new Error(`[DB] Failed to create account: ${error.message}`);
-  console.log(`[ACCOUNT] Created ${tier} account for ${agentId} → ${nxtLayerAddress}`);
+  console.log(`[ACCOUNT] Created ${tier} account for ${agentId} → ${nxtLayerAddress} (ref: ${myReferralCode})`);
+
+  // Process referral reward if referred
+  if (referredBy) {
+    await processReferralReward(referredBy, agentId, tier);
+  }
+
   return data;
 }
 
@@ -250,4 +271,71 @@ export async function awardPoints(agentId, amount, reason) {
   }
 
   console.log(`[POINTS] +${amount} MBPs → ${agentId} (${reason})`);
+}
+
+// ─── Referral System ───
+
+export async function validateReferral(newAgentId, referralCode) {
+  // Look up referrer by code
+  const { data: referrer } = await supabase
+    .from('accounts')
+    .select('agent_id, referral_count, referral_cap, tier')
+    .eq('referral_code', referralCode)
+    .single();
+
+  if (!referrer) {
+    console.log(`[REFERRAL] Invalid code: ${referralCode}`);
+    return null;
+  }
+
+  // Block self-referral
+  if (referrer.agent_id.toLowerCase() === newAgentId.toLowerCase()) {
+    console.log(`[REFERRAL] Blocked self-referral for ${newAgentId}`);
+    return null;
+  }
+
+  // Check cap
+  if (referrer.referral_count >= referrer.referral_cap) {
+    console.log(`[REFERRAL] ${referrer.agent_id} hit referral cap (${referrer.referral_cap})`);
+    return null;
+  }
+
+  return referrer;
+}
+
+export async function processReferralReward(referrerId, referredId, referredTier) {
+  const usdcAmount = config.tiers[referredTier].amount * config.referral.usdcPercent;
+  const pointsAmount = config.referral.points[referredTier];
+
+  // Log the referral payout (USDC pending, points immediate)
+  const { error: payoutError } = await supabase
+    .from('referral_payouts')
+    .insert({
+      referrer_id: referrerId,
+      referred_id: referredId,
+      referred_tier: referredTier,
+      usdc_amount: usdcAmount,
+      points_amount: pointsAmount,
+      points_paid: true,
+      usdc_paid: false,
+    });
+
+  if (payoutError) {
+    console.error(`[REFERRAL] Failed to log payout: ${payoutError.message}`);
+    return;
+  }
+
+  // Award points immediately
+  await awardPoints(referrerId, pointsAmount, `referral_${referredTier}`);
+
+  // Increment referral count
+  await supabase
+    .from('accounts')
+    .update({ referral_count: supabase.rpc ? undefined : undefined })
+    .eq('agent_id', referrerId);
+
+  // Use raw SQL increment instead
+  await supabase.rpc('increment_referral_count', { agent: referrerId });
+
+  console.log(`[REFERRAL] ${referrerId} earned ${pointsAmount} MBPs + $${usdcAmount} USDC (pending) for referring ${referredId} (${referredTier})`);
 }

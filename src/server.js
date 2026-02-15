@@ -65,6 +65,7 @@ async function handleAccountOpen(req, res) {
   const body = await parseBody(req);
   const paymentTx = body.payment_tx;
   const agentId = body.agent_id;
+  const referralCode = body.referral_code || null;
 
   // No payment proof? Return 402
   if (!paymentTx) {
@@ -90,7 +91,7 @@ async function handleAccountOpen(req, res) {
 
   // Add to queue (on-chain verification happens in the watcher loop)
   const amount = config.tiers[tier].amount;
-  const queueEntry = await addToQueue(paymentTx, agentId, tier, amount);
+  const queueEntry = await addToQueue(paymentTx, agentId, tier, amount, referralCode);
 
   const stats = await getQueueStats();
 
@@ -119,7 +120,8 @@ async function handleAccountOpen(req, res) {
     agents_ahead: stats.pending - 1,
     estimated_wait_minutes: (stats.pending - 1) * (config.teller.queueCooldown / 60000),
     includes: includesMap[tier],
-    message: `Account queued at position ${queueEntry.position}. You will receive your wallet details once processed.`,
+    referral_code_used: referralCode || null,
+    message: `Account queued at position ${queueEntry.position}. You will receive your wallet details and your own referral code once processed.`,
   });
 }
 
