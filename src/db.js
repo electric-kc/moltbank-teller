@@ -29,7 +29,7 @@ export async function addToQueue(paymentTx, agentId, tier, amount, referralCode 
     const { data: firstNonVip } = await supabase
       .from('queue')
       .select('position')
-      .eq('status', 'pending')
+      .eq('status', 'confirmed')
       .neq('tier', 'vip')
       .order('position', { ascending: true })
       .limit(1)
@@ -44,7 +44,7 @@ export async function addToQueue(paymentTx, agentId, tier, amount, referralCode 
     const { data: firstRegular } = await supabase
       .from('queue')
       .select('position')
-      .eq('status', 'pending')
+      .eq('status', 'confirmed')
       .eq('tier', 'regular')
       .order('position', { ascending: true })
       .limit(1)
@@ -64,7 +64,7 @@ export async function addToQueue(paymentTx, agentId, tier, amount, referralCode 
       tier,
       amount,
       position: finalPosition,
-      status: 'pending',
+      status: 'confirmed',
       referral_code: referralCode,
     })
     .select()
@@ -79,7 +79,7 @@ export async function getNextInQueue() {
   const { data, error } = await supabase
     .from('queue')
     .select('*')
-    .eq('status', 'pending')
+    .eq('status', 'confirmed')
     .order('position', { ascending: true })
     .limit(1)
     .single();
