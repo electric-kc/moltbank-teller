@@ -1,7 +1,68 @@
-version: "3.8"
 services:
   teller:
-    build: .
+    image: ghcr.io/electric-kc/moltbank-teller:latest
+    pull_policy: always
     ports:
-      - "3402:3402"
+      - 3402:3402
     restart: always
+    networks:
+      - traefik
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+      - BASE_RPC_URL=${BASE_RPC_URL}
+      - SAFE_ADDRESS=${SAFE_ADDRESS}
+      - QUEUE_COOLDOWN=${QUEUE_COOLDOWN}
+    env_file:
+      - usr/.env
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.teller.rule=Host(`ivory-penguin.vm.scrtlabs.com`)
+      - traefik.http.routers.teller.entrypoints=websecure
+      - traefik.http.routers.teller.tls=true
+      - traefik.http.services.teller.loadbalancer.server.port=3402
+  traefik:
+    image: traefik:v2.10
+    command:
+      - --api.insecure=false
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --entrypoints.websecure.http.tls.options=default@file
+      - --providers.file.directory=/etc/traefik/dynamic
+      - --providers.file.watch=true
+    ports:
+      - 80:80
+      - 443:443
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /mnt/secure/cert:/certs:ro
+    networks:
+      - traefik
+    configs:
+      - source: tls_config
+        target: /etc/traefik/dynamic/tls.yml
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.traefik.rule=Host(`ivory-penguin.vm.scrtlabs.com`)
+      - traefik.http.routers.traefik.entrypoints=websecure
+      - traefik.http.routers.traefik.tls=true
+      - traefik.http.services.traefik.loadbalancer.server.port=80
+    env_file:
+      - usr/.env
+networks:
+  traefik:
+    driver: bridge
+configs:
+  tls_config:
+    content: |-
+      tls:
+        certificates:
+          - certFile: /certs/secret_vm_fullchain.pem
+            keyFile: /certs/secret_vm_private.pem
+        stores:
+          default:
+            defaultCertificate:
+              certFile: /certs/secret_vm_fullchain.pem
+              keyFile: /certs/secret_vm_private.pem

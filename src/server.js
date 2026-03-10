@@ -1,17 +1,14 @@
-import http from 'node:http';
+import http from 'http';
 import { config } from './config.js';
-import { isPaymentProcessed, addToQueue, getQueueStats } from './db.js';
+import { addToQueue, getVipCount } from './db.js';
 
-const PORT = process.env.PORT || 3402;
-
-// Parse JSON body from request
 function parseBody(req) {
   return new Promise((resolve, reject) => {
     let body = '';
     req.on('data', (chunk) => (body += chunk));
     req.on('end', () => {
       try {
-        resolve(body ? JSON.parse(body) : {});
+        resolve(JSON.parse(body));
       } catch {
         resolve({});
       }
@@ -20,48 +17,41 @@ function parseBody(req) {
   });
 }
 
-// Send JSON response
-function json(res, status, data) {
-  res.writeHead(status, { 'Content-Type': 'application/json' });
+function sendJson(res, statusCode, data) {
+  res.writeHead(statusCode, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(data));
 }
-
-// ─── x402 Payment Required Response ───
 
 function send402(res, amount, description) {
   res.writeHead(402, {
     'Content-Type': 'application/json',
     'X-Payment-Required': 'true',
-    'X-Payment-Chain': 'BASE',
-    'X-Payment-Token': 'USDC',
     'X-Payment-Amount': amount.toString(),
+    'X-Payment-Currency': 'USDC',
+    'X-Payment-Network': 'BASE',
     'X-Payment-Address': config.chain.safeAddress,
-    'X-Payment-Description': description,
   });
   res.end(JSON.stringify({
-    error: 'payment_required',
+    status: 402,
+    message: 'Payment Required',
     payment: {
-      chain: 'BASE',
-      token: 'USDC',
-      contract: config.chain.usdcContract,
       amount,
-      recipient: config.chain.safeAddress,
+      currency: 'USDC',
+      network: 'BASE',
+      address: config.chain.safeAddress,
       description,
     },
-    instructions: `Send ${amount} USDC to ${config.chain.safeAddress} on BASE. Include your agent ID in the request after payment.`,
   }));
 }
 
-// ─── Route Handlers ───
+const tierDescriptions = {
+  limited: `Limited Account (Burner): NXT Layer wallet, 5 chain addresses (BTC, ETH, XRP, SOL, BASE), $${config.nxtLayerGas.limited} NXT Layer gas, 250 MBP. No recovery, no guardians.`,
+  regular: `Standard Account: NXT Layer wallet, 5 chain addresses (BTC, ETH, XRP, SOL, BASE), $${config.nxtLayerGas.regular} NXT Layer gas, social recovery with guardians`,
+  premium: `Premium Account: NXT Layer wallet, 5 chain addresses (BTC, ETH, XRP, SOL, BASE), $${config.nxtLayerGas.premium} NXT Layer gas, $12.50 gas bundle (5 chains), priority queue, Joint Account (multi-sig), Master Account (2-level governance)`,
+  vip: `VIP Account: NXT Layer wallet, 5 chain addresses (BTC, ETH, XRP, SOL, BASE), $${config.nxtLayerGas.vip} NXT Layer gas, $25 gas bundle (5 chains), instant queue (front of line), Joint Account (multi-sig), Governance Account (multi-level governance), Governance Control Center`,
+};
 
-async function handleAccountOpen(req, res) {
-  const url = new URL(req.url, `http://localhost:${PORT}`);
-  const tier = url.searchParams.get('tier') || 'regular';
-
-  if (tier !== 'regular' && tier !== 'premium' && tier !== 'vip') {
-    return json(res, 400, { error: 'Invalid tier. Use "regular", "premium", or "vip".' });
-  }
-
+async function handleAccountOpen(req, res, tier) {
   const body = await parseBody(req);
   const paymentTx = body.payment_tx;
   const agentId = body.agent_id;
@@ -69,188 +59,113 @@ async function handleAccountOpen(req, res) {
 
   // No payment proof? Return 402
   if (!paymentTx) {
+    // VIP cap check BEFORE sending payment request
+    if (tier === 'vip') {
+      const vipCount = await getVipCount();
+      if (vipCount >= config.tierCaps.vip.displayCap) {
+        return sendJson(res, 503, {
+          error: 'VIP accounts sold out',
+          message: `All ${config.tierCaps.vip.displayCap} VIP accounts have been claimed.`,
+          tier: 'vip',
+          remaining: 0,
+        });
+      }
+    }
+
     const amount = config.tiers[tier].amount;
-    const descriptions = {
-      regular: `Regular Account: NXT Layer wallet, 5 chain addresses (BTC, ETH, XRP, SOL, BASE), $${config.nxtLayerGas.regular} NXT Layer gas`,
-      premium: `Premium Account: NXT Layer wallet, 5 chain addresses (BTC, ETH, XRP, SOL, BASE), $${config.nxtLayerGas.premium} NXT Layer gas, $12.50 gas bundle (5 chains), priority queue, NFT entitlement`,
-      vip: `VIP Account: NXT Layer wallet, 5 chain addresses (BTC, ETH, XRP, SOL, BASE), $${config.nxtLayerGas.vip} NXT Layer gas, $25 gas bundle (5 chains), instant queue (front of line), VIP NFT`,
-    };
-    return send402(res, amount, descriptions[tier]);
+    return send402(res, amount, tierDescriptions[tier]);
   }
 
-  // Has payment proof — verify and queue
+  // Has payment proof — process it
   if (!agentId) {
-    return json(res, 400, { error: 'Missing agent_id' });
+    return sendJson(res, 400, { error: 'agent_id is required' });
   }
 
-  // Check if already processed
-  const alreadyProcessed = await isPaymentProcessed(paymentTx);
-  if (alreadyProcessed) {
-    return json(res, 409, { error: 'Payment already processed', payment_tx: paymentTx });
-  }
-
-  // Add to queue (on-chain verification happens in the watcher loop)
   const amount = config.tiers[tier].amount;
   const queueEntry = await addToQueue(paymentTx, agentId, tier, amount, referralCode);
 
-  const stats = await getQueueStats();
+  if (!queueEntry) {
+    return sendJson(res, 500, { error: 'Failed to add to queue' });
+  }
 
-  const includesMap = {
-    regular: {
-      nxt_layer_gas: `$${config.nxtLayerGas.regular}`,
-    },
-    premium: {
-      nxt_layer_gas: `$${config.nxtLayerGas.premium}`,
-      gas_bundle: config.gasBundle.chains.map((c) => `$${config.gasBundle.perChain.premium} ${c}`),
-      priority_queue: true,
-      nft_entitlement: true,
-    },
-    vip: {
-      nxt_layer_gas: `$${config.nxtLayerGas.vip}`,
-      gas_bundle: config.gasBundle.chains.map((c) => `$${config.gasBundle.perChain.vip} ${c}`),
-      instant_queue: true,
-      vip_nft: true,
-    },
-  };
-
-  return json(res, 202, {
+  sendJson(res, 200, {
     status: 'queued',
     tier,
     position: queueEntry.position,
-    agents_ahead: stats.pending - 1,
-    estimated_wait_minutes: (stats.pending - 1) * (config.teller.queueCooldown / 60000),
-    includes: includesMap[tier],
-    referral_code_used: referralCode || null,
-    message: `Account queued at position ${queueEntry.position}. You will receive your wallet details and your own referral code once processed.`,
+    points: config.points[tier],
+    nxtGas: config.nxtLayerGas[tier],
+    gasBundle: config.gasBundle.perChain[tier] > 0
+      ? `$${config.gasBundle.perChain[tier]} x ${config.gasBundle.chains.length} chains`
+      : 'none',
+    referralCode: referralCode || 'none',
   });
 }
 
-async function handleGasBundle(req, res) {
-  const body = await parseBody(req);
-  const paymentTx = body.payment_tx;
-  const agentId = body.agent_id;
-
-  // No payment proof? Return 402
-  if (!paymentTx) {
-    return send402(
-      res,
-      config.gasBundle.price,
-      `Gas Bundle: $${config.gasBundle.perChain} of gas on each of ${config.gasBundle.chains.join(', ')}`
-    );
-  }
-
-  if (!agentId) {
-    return json(res, 400, { error: 'Missing agent_id' });
-  }
-
-  const alreadyProcessed = await isPaymentProcessed(paymentTx);
-  if (alreadyProcessed) {
-    return json(res, 409, { error: 'Payment already processed', payment_tx: paymentTx });
-  }
-
-  // Queue gas bundle delivery
-  const queueEntry = await addToQueue(paymentTx, agentId, 'gas_bundle', config.gasBundle.price);
-
-  return json(res, 202, {
-    status: 'queued',
-    type: 'gas_bundle',
-    position: queueEntry.position,
-    chains: config.gasBundle.chains,
-    per_chain: `$${config.gasBundle.perChain}`,
-    message: 'Gas bundle queued for delivery.',
+function handleHealth(req, res) {
+  sendJson(res, 200, {
+    status: 'ok',
+    service: 'moltbank-teller',
+    timestamp: new Date().toISOString(),
+    tiers: Object.keys(config.tiers),
   });
 }
 
-async function handleQueueStatus(req, res) {
-  const url = new URL(req.url, `http://localhost:${PORT}`);
-  const agentId = url.searchParams.get('agent_id');
-
-  const stats = await getQueueStats();
-
-  return json(res, 200, {
-    queue_length: stats.pending,
-    total_processed: stats.completed,
-    cooldown_seconds: config.teller.queueCooldown / 1000,
-    estimated_wait_minutes: stats.pending * (config.teller.queueCooldown / 60000),
-    pricing: {
-      regular_account: `${config.tiers.regular.amount} USDC`,
-      premium_account: `${config.tiers.premium.amount} USDC`,
-      vip_account: `${config.tiers.vip.amount} USDC`,
-      gas_bundle: `${config.gasBundle.price} USDC`,
-    },
-    supported_chains: config.gasBundle.chains,
+async function handleVipStatus(req, res) {
+  const vipCount = await getVipCount();
+  const cap = config.tierCaps.vip.displayCap;
+  sendJson(res, 200, {
+    tier: 'vip',
+    total: cap,
+    claimed: vipCount,
+    remaining: Math.max(0, cap - vipCount),
+    soldOut: vipCount >= cap,
   });
 }
-
-async function handleHealth(req, res) {
-  return json(res, 200, { status: 'online', agent: config.teller.agentName, timestamp: new Date().toISOString() });
-}
-
-async function handleAccountInfo(req, res) {
-  const url = new URL(req.url, `http://localhost:${PORT}`);
-  const agentId = url.searchParams.get('agent_id');
-
-  if (!agentId) {
-    return json(res, 400, { error: 'Missing agent_id parameter' });
-  }
-
-  const { getAccountByAgentId } = await import('./db.js');
-  const account = await getAccountByAgentId(agentId);
-
-  if (!account) {
-    return json(res, 404, { error: 'Account not found' });
-  }
-
-  return json(res, 200, {
-    agent_id: account.agent_id,
-    tier: account.tier,
-    nxt_layer_address: account.nxt_layer_address,
-    referral_code: account.referral_code,
-    referral_count: account.referral_count,
-    referral_cap: account.referral_cap,
-    created_at: account.created_at,
-  });
-}
-
-// ─── Router ───
-
-const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, `http://localhost:${PORT}`);
-  const path = url.pathname;
-
-  try {
-    if (path === '/account/open' && req.method === 'POST') {
-      return await handleAccountOpen(req, res);
-    }
-    if (path === '/gas-bundle' && req.method === 'POST') {
-      return await handleGasBundle(req, res);
-    }
-    if (path === '/queue/status' && req.method === 'GET') {
-      return await handleQueueStatus(req, res);
-    }
-    if (path === '/account/info' && req.method === 'GET') {
-      return await handleAccountInfo(req, res);
-    }
-    if (path === '/health' && req.method === 'GET') {
-      return await handleHealth(req, res);
-    }
-
-    return json(res, 404, { error: 'Not found' });
-  } catch (error) {
-    console.error(`[HTTP] Error: ${error.message}`);
-    return json(res, 500, { error: 'Internal server error' });
-  }
-});
 
 export function startServer() {
-  server.listen(PORT, () => {
-    console.log(`[HTTP] Teller API running on port ${PORT}`);
-    console.log(`[HTTP] POST /account/open?tier=regular  → 10 USDC`);
-    console.log(`[HTTP] POST /account/open?tier=premium  → 50 USDC`);
-    console.log(`[HTTP] POST /account/open?tier=vip      → 100 USDC`);
-    console.log(`[HTTP] POST /gas-bundle                 → 15 USDC`);
-    console.log(`[HTTP] GET  /account/info?agent_id=0x...`);
-    console.log(`[HTTP] GET  /queue/status`);
-    console.log(`[HTTP] GET  /health`);
+  const server = http.createServer(async (req, res) => {
+    // CORS headers
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204);
+      return res.end();
+    }
+
+    const url = new URL(req.url, `http://localhost:${config.port}`);
+
+    try {
+      if (req.method === 'GET' && url.pathname === '/health') {
+        return handleHealth(req, res);
+      }
+      if (req.method === 'GET' && url.pathname === '/vip/status') {
+        return handleVipStatus(req, res);
+      }
+      if (req.method === 'POST' && url.pathname === '/account/open/limited') {
+        return handleAccountOpen(req, res, 'limited');
+      }
+      if (req.method === 'POST' && url.pathname === '/account/open') {
+        return handleAccountOpen(req, res, 'regular');
+      }
+      if (req.method === 'POST' && url.pathname === '/account/open/premium') {
+        return handleAccountOpen(req, res, 'premium');
+      }
+      if (req.method === 'POST' && url.pathname === '/account/open/vip') {
+        return handleAccountOpen(req, res, 'vip');
+      }
+
+      sendJson(res, 404, { error: 'Not found' });
+    } catch (err) {
+      console.error('[SERVER] Error:', err);
+      sendJson(res, 500, { error: 'Internal server error' });
+    }
+  });
+
+  server.listen(config.port, () => {
+    console.log(`[TELLER] Listening on port ${config.port}`);
+    console.log(`[TELLER] Tiers: Limited ($5) | Standard ($10) | Premium ($50) | VIP ($100)`);
+    console.log(`[TELLER] VIP cap: ${config.tierCaps.vip.displayCap} (buffer: ${config.tierCaps.vip.hardCap})`);
   });
 }

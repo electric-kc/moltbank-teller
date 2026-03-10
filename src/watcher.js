@@ -1,6 +1,6 @@
 import { ethers } from 'ethers';
 import { config } from './config.js';
-import { isPaymentProcessed, addToQueue, logTransaction } from './db.js';
+import { isPaymentProcessed, addToQueue, logTransaction, getVipCount } from './db.js';
 
 // Minimal ERC20 ABI - just the Transfer event
 const ERC20_ABI = [
@@ -50,7 +50,7 @@ export async function checkForPayments() {
       const amount = parseFloat(ethers.formatUnits(event.args.value, 6));
       const sender = event.args.from;
 
-      // Determine tier based on amount
+      // Determine tier based on amount (check highest first)
       let tier = null;
       if (amount >= config.tiers.vip.amount) {
         tier = 'vip';
@@ -58,16 +58,33 @@ export async function checkForPayments() {
         tier = 'premium';
       } else if (amount >= config.tiers.regular.amount) {
         tier = 'regular';
+      } else if (amount >= config.tiers.limited.amount) {
+        tier = 'limited';
       } else {
         console.log(`[WATCHER] Ignoring small payment: ${amount} USDC from ${sender}`);
         continue;
       }
 
+      // VIP hard cap check — reject if above buffer ceiling
+      if (tier === 'vip') {
+        const vipCount = await getVipCount();
+        if (vipCount >= config.tierCaps.vip.hardCap) {
+          console.log(`[WATCHER] VIP HARD CAP REACHED (${vipCount}/${config.tierCaps.vip.hardCap}). Rejecting VIP payment from ${sender}. REFUND NEEDED.`);
+          await logTransaction(txHash, sender, amount, 'vip_rejected', 'VIP hard cap exceeded — refund required');
+          continue;
+        }
+        if (vipCount >= config.tierCaps.vip.displayCap) {
+          console.log(`[WATCHER] VIP in BUFFER ZONE (${vipCount}/${config.tierCaps.vip.hardCap}). Accepting from ${sender}.`);
+        }
+      }
+
       console.log(`[WATCHER] New payment detected: ${amount} USDC from ${sender} (${tier})`);
 
-      // Add to queue - using sender address as agent_id for now
-      // In production, the agent would provide its ID in the x402 flow
+      // Add to queue
       const queueEntry = await addToQueue(txHash, sender, tier, amount);
+
+      // Log the transaction
+      await logTransaction(txHash, sender, amount, tier, 'confirmed');
 
       newPayments.push({
         txHash,
@@ -83,8 +100,8 @@ export async function checkForPayments() {
     }
 
     return newPayments;
-  } catch (error) {
-    console.error(`[WATCHER] Error checking payments: ${error.message}`);
+  } catch (err) {
+    console.error('[WATCHER] Error checking payments:', err.message);
     return [];
   }
 }
