@@ -10,6 +10,7 @@ export async function writeHeartbeat() {
     .from('agent_health')
     .upsert({
       agent_name: 'moltbank-teller',
+      agent_role: 'teller',
       status: 'online',
       last_heartbeat: now,
       updated_at: now,
