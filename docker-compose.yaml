@@ -13,6 +13,8 @@ services:
       - BASE_RPC_URL=${BASE_RPC_URL}
       - SAFE_ADDRESS=${SAFE_ADDRESS}
       - QUEUE_COOLDOWN=${QUEUE_COOLDOWN}
+      - TELLER_VERSION=3
+- TELLER_VERSION=3
     env_file:
       - usr/.env
     labels:
