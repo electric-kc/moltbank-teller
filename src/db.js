@@ -5,14 +5,17 @@ const supabase = createClient(config.supabase.url, config.supabase.serviceKey);
 
 // --- Heartbeat ---
 export async function writeHeartbeat() {
+  const now = new Date().toISOString();
   const { error } = await supabase
     .from('agent_health')
     .upsert({
       agent_name: 'moltbank-teller',
       status: 'online',
-      last_heartbeat: new Date().toISOString(),
+      last_heartbeat: now,
+      updated_at: now,
     }, { onConflict: 'agent_name' });
   if (error) console.error('[DB] Heartbeat error:', error.message);
+  else console.log('[TELLER] Heartbeat written');
 }
 
 // --- VIP Cap ---
@@ -48,9 +51,9 @@ export async function addToQueue(paymentTx, agentId, tier, amount, referralCode 
     .single();
 
   let position = (maxPos?.position || 0) + 1;
+  let finalPosition = position;
 
   // VIP goes to absolute front — only behind other VIPs
-  let finalPosition = position;
   if (tier === 'vip') {
     const { data: firstNonVip } = await supabase
       .from('queue')
