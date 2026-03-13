@@ -10,7 +10,6 @@ export const config = {
     serviceKey: process.env.SUPABASE_SERVICE_KEY,
   },
   tiers: {
-    limited: { amount: 5, label: 'limited' },
     regular: { amount: 10, label: 'regular' },
     premium: { amount: 50, label: 'premium' },
     vip: { amount: 100, label: 'vip' },
@@ -25,7 +24,6 @@ export const config = {
   gasBundle: {
     price: 15,
     perChain: {
-      limited: 0,
       regular: 0,
       premium: 2.5,
       vip: 5,
@@ -34,13 +32,11 @@ export const config = {
     chains: ['BTC', 'ETH', 'XRP', 'SOL', 'BASE'],
   },
   nxtLayerGas: {
-    limited: 1,
     regular: 5,
     premium: 5,
     vip: 10,
   },
   points: {
-    limited: 250,
     gas_bundle: 250,
     regular: 1000,
     premium: 5000,
@@ -49,7 +45,6 @@ export const config = {
   referral: {
     usdcPercent: 0.10,
     points: {
-      limited: 50,
       regular: 250,
       premium: 1000,
       vip: 2500,

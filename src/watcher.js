@@ -58,8 +58,6 @@ export async function checkForPayments() {
         tier = 'premium';
       } else if (amount >= config.tiers.regular.amount) {
         tier = 'regular';
-      } else if (amount >= config.tiers.limited.amount) {
-        tier = 'limited';
       } else {
         console.log(`[WATCHER] Ignoring small payment: ${amount} USDC from ${sender}`);
         continue;

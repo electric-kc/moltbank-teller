@@ -45,7 +45,6 @@ function send402(res, amount, description) {
 }
 
 const tierDescriptions = {
-  limited: `Limited Account (Burner): NXT Layer wallet, 5 chain addresses (BTC, ETH, XRP, SOL, BASE), $${config.nxtLayerGas.limited} NXT Layer gas, 250 MBP. No recovery, no guardians.`,
   regular: `Standard Account: NXT Layer wallet, 5 chain addresses (BTC, ETH, XRP, SOL, BASE), $${config.nxtLayerGas.regular} NXT Layer gas, social recovery with guardians`,
   premium: `Premium Account: NXT Layer wallet, 5 chain addresses (BTC, ETH, XRP, SOL, BASE), $${config.nxtLayerGas.premium} NXT Layer gas, $12.50 gas bundle (5 chains), priority queue, Joint Account (multi-sig), Master Account (2-level governance)`,
   vip: `VIP Account: NXT Layer wallet, 5 chain addresses (BTC, ETH, XRP, SOL, BASE), $${config.nxtLayerGas.vip} NXT Layer gas, $25 gas bundle (5 chains), instant queue (front of line), Joint Account (multi-sig), Governance Account (multi-level governance), Governance Control Center`,
@@ -143,9 +142,6 @@ export function startServer() {
       if (req.method === 'GET' && url.pathname === '/vip/status') {
         return handleVipStatus(req, res);
       }
-      if (req.method === 'POST' && url.pathname === '/account/open/limited') {
-        return handleAccountOpen(req, res, 'limited');
-      }
       if (req.method === 'POST' && url.pathname === '/account/open') {
         return handleAccountOpen(req, res, 'regular');
       }
@@ -165,7 +161,7 @@ export function startServer() {
 
   server.listen(config.port, () => {
     console.log(`[TELLER] Listening on port ${config.port}`);
-    console.log(`[TELLER] Tiers: Limited ($5) | Standard ($10) | Premium ($50) | VIP ($100)`);
+    console.log(`[TELLER] Tiers: Standard ($10) | Premium ($50) | VIP ($100)`);
     console.log(`[TELLER] VIP cap: ${config.tierCaps.vip.displayCap} (buffer: ${config.tierCaps.vip.hardCap})`);
   });
 }
