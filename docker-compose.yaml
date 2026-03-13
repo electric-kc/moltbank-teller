@@ -13,10 +13,16 @@ services:
       - BASE_RPC_URL=${BASE_RPC_URL}
       - SAFE_ADDRESS=${SAFE_ADDRESS}
       - QUEUE_COOLDOWN=${QUEUE_COOLDOWN}
-      - TELLER_VERSION=3
-- TELLER_VERSION=3
     env_file:
       - usr/.env
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.teller.rule=Host(`ivory-penguin.vm.scrtlabs.com`)
+      - traefik.http.routers.teller.entrypoints=websecure
+      - traefik.http.routers.teller.tls=true
+      - traefik.http.services.teller.loadbalancer.server.port=3402
+      - traefik.docker.network=docker_wd_traefik
+
   traefik:
     image: traefik:v2.10
     command:
@@ -39,17 +45,13 @@ services:
     configs:
       - source: tls_config
         target: /etc/traefik/dynamic/tls.yml
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.traefik.rule=Host(`ivory-penguin.vm.scrtlabs.com`)
-      - traefik.http.routers.traefik.entrypoints=websecure
-      - traefik.http.routers.traefik.tls=true
-      - traefik.http.services.traefik.loadbalancer.server.port=80
     env_file:
       - usr/.env
+
 networks:
   traefik:
     driver: bridge
+
 configs:
   tls_config:
     content: |-
