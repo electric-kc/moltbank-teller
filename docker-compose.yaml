@@ -17,12 +17,6 @@ services:
 - TELLER_VERSION=3
     env_file:
       - usr/.env
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.teller.rule=Host(`ivory-penguin.vm.scrtlabs.com`)
-      - traefik.http.routers.teller.entrypoints=websecure
-      - traefik.http.routers.teller.tls=true
-      - traefik.http.services.teller.loadbalancer.server.port=3402
   traefik:
     image: traefik:v2.10
     command:
