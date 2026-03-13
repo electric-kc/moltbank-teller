@@ -29,7 +29,7 @@ export const config = {
       vip: 5,
       standalone: 2.5,
     },
-    chains: ['BTC', 'ETH', 'XRP', 'SOL', 'BASE'],
+    chains: ['BTC', 'ETH', 'SOL', 'BASE', 'AVAX'],
   },
   nxtLayerGas: {
     regular: 5,
@@ -49,7 +49,7 @@ export const config = {
       premium: 1000,
       vip: 2500,
     },
-    maxPerAccount: 50,
+    maxPerAccount: 100,
   },
   queue: {
     cooldown: parseInt(process.env.QUEUE_COOLDOWN) || 30000,

@@ -45,9 +45,9 @@ function send402(res, amount, description) {
 }
 
 const tierDescriptions = {
-  regular: `Standard Account: NXT Layer wallet, 5 chain addresses (BTC, ETH, XRP, SOL, BASE), $${config.nxtLayerGas.regular} NXT Layer gas, social recovery with guardians`,
-  premium: `Premium Account: NXT Layer wallet, 5 chain addresses (BTC, ETH, XRP, SOL, BASE), $${config.nxtLayerGas.premium} NXT Layer gas, $12.50 gas bundle (5 chains), priority queue, Joint Account (multi-sig), Master Account (2-level governance)`,
-  vip: `VIP Account: NXT Layer wallet, 5 chain addresses (BTC, ETH, XRP, SOL, BASE), $${config.nxtLayerGas.vip} NXT Layer gas, $25 gas bundle (5 chains), instant queue (front of line), Joint Account (multi-sig), Governance Account (multi-level governance), Governance Control Center`,
+  regular: `Standard Account: NXT Layer wallet, 9 chain addresses (BTC, ETH, XRP, SOL, BASE, AVAX, SHIB, DOGE, ADA), $${config.nxtLayerGas.regular} NXT Layer gas, social recovery with guardians`,
+  premium: `Premium Account: NXT Layer wallet, 9 chain addresses (BTC, ETH, XRP, SOL, BASE, AVAX, SHIB, DOGE, ADA), $${config.nxtLayerGas.premium} NXT Layer gas, $12.50 gas bundle (5 chains), priority queue, Joint Account (multi-sig), Master Account (2-level governance)`,
+  vip: `VIP Account: NXT Layer wallet, 9 chain addresses (BTC, ETH, XRP, SOL, BASE, AVAX, SHIB, DOGE, ADA), $${config.nxtLayerGas.vip} NXT Layer gas, $25 gas bundle (5 chains), instant queue (front of line), Joint Account (multi-sig), Governance Account (multi-level governance), Governance Control Center`,
 };
 
 async function handleAccountOpen(req, res, tier) {
