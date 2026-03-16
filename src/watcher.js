@@ -1,6 +1,6 @@
 import { ethers } from 'ethers';
 import { config } from './config.js';
-import { isPaymentProcessed, addToQueue, logTransaction, getVipCount } from './db.js';
+import { isPaymentProcessed, addToQueue, logTransaction, getVipCount, handleReferral } from './db.js';
 
 // Minimal ERC20 ABI - just the Transfer event
 const ERC20_ABI = [
@@ -34,7 +34,6 @@ export async function checkForPayments() {
     // Query Transfer events TO our Safe address
     const filter = usdcContract.filters.Transfer(null, config.chain.safeAddress);
     const events = await usdcContract.queryFilter(filter, lastCheckedBlock + 1, currentBlock);
-
     lastCheckedBlock = currentBlock;
 
     const newPayments = [];
@@ -78,17 +77,48 @@ export async function checkForPayments() {
 
       console.log(`[WATCHER] New payment detected: ${amount} USDC from ${sender} (${tier})`);
 
+      // Check if this tx was pre-registered via the server endpoint
+      // (agent called /account/open first, got 402, then paid — referral code was stored)
+      // The queue entry from server.js will have the referral_code already set
+      // We look it up here so watcher-detected payments also get referral credit
+      let referralCode = null;
+      try {
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(config.supabase.url, config.supabase.serviceKey);
+        const { data: preQueued } = await supabase
+          .from('queue')
+          .select('referral_code')
+          .eq('payment_tx', txHash)
+          .maybeSingle();
+        referralCode = preQueued?.referral_code || null;
+        if (referralCode) {
+          console.log(`[WATCHER] Found pre-registered referral code: ${referralCode}`);
+        }
+      } catch (e) {
+        console.error('[WATCHER] Error looking up pre-queued referral code:', e.message);
+      }
+
       // Add to queue
-      const queueEntry = await addToQueue(txHash, sender, tier, amount);
+      const queueEntry = await addToQueue(txHash, sender, tier, amount, referralCode);
 
       // Log the transaction
       await logTransaction(txHash, sender, amount, tier, 'confirmed');
+
+      // Handle referral payout — non-blocking, won't fail the payment
+      if (referralCode) {
+        try {
+          await handleReferral(referralCode, sender, tier, amount);
+        } catch (e) {
+          console.error('[WATCHER] Referral handling error (non-fatal):', e.message);
+        }
+      }
 
       newPayments.push({
         txHash,
         sender,
         amount,
         tier,
+        referralCode,
         queueEntry,
       });
     }
