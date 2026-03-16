@@ -64,7 +64,6 @@ export async function addToQueue(paymentTx, agentId, tier, amount, referralCode 
       .order('position', { ascending: true })
       .limit(1)
       .single();
-
     if (firstNonVip) {
       await supabase.rpc('bump_queue_positions', { from_pos: firstNonVip.position });
       finalPosition = firstNonVip.position;
@@ -81,7 +80,6 @@ export async function addToQueue(paymentTx, agentId, tier, amount, referralCode 
       .order('position', { ascending: true })
       .limit(1)
       .single();
-
     if (firstRegular) {
       await supabase.rpc('bump_queue_positions', { from_pos: firstRegular.position });
       finalPosition = firstRegular.position;
@@ -122,4 +120,100 @@ export async function logTransaction(txHash, agentId, amount, type, status) {
       status,
     });
   if (error) console.error('[DB] Error logging transaction:', error.message);
+}
+
+// --- Referral Handling ---
+export async function handleReferral(referralCode, agentId, tier, amount) {
+  if (!referralCode) return;
+
+  // Step 1 — check if it's an ambassador code
+  const { data: inviteRequest } = await supabase
+    .from('invite_requests')
+    .select('id, x_username, invite_code')
+    .eq('invite_code', referralCode)
+    .single();
+
+  if (inviteRequest) {
+    // It's an ambassador referral — look up their ambassador record
+    const { data: ambassador } = await supabase
+      .from('ambassadors')
+      .select('id, x_handle')
+      .eq('invited_with_code', referralCode)
+      .single();
+
+    if (ambassador) {
+      const usdcAmount = parseFloat((amount * 0.15).toFixed(6)); // 15% ambassador rate
+
+      const { error } = await supabase
+        .from('ambassador_payouts')
+        .insert({
+          ambassador_id: ambassador.id,
+          referred_agent_id: agentId,
+          tier,
+          usdc_amount: usdcAmount,
+          usdc_paid: false,
+        });
+
+      if (error) {
+        console.error('[DB] Error writing ambassador payout:', error.message);
+      } else {
+        console.log(`[REFERRAL] Ambassador payout queued for @${ambassador.x_handle}: ${usdcAmount} USDC (15%)`);
+      }
+    } else {
+      console.log(`[REFERRAL] Ambassador invite code found but no ambassador record for: ${referralCode}`);
+    }
+    return;
+  }
+
+  // Step 2 — check if it's an agent referral code
+  const { data: referrerAccount } = await supabase
+    .from('accounts')
+    .select('id, agent_id, referral_count, referral_cap')
+    .eq('referral_code', referralCode)
+    .single();
+
+  if (referrerAccount) {
+    // Check referral cap (null = unlimited for ambassadors, numeric for agents)
+    const cap = referrerAccount.referral_cap;
+    const count = referrerAccount.referral_count || 0;
+
+    if (cap !== null && count >= cap) {
+      console.log(`[REFERRAL] Agent ${referrerAccount.agent_id} has hit referral cap (${count}/${cap}). Skipping.`);
+      return;
+    }
+
+    const usdcAmount = parseFloat((amount * 0.10).toFixed(6)); // 10% agent rate
+
+    const { error: payoutError } = await supabase
+      .from('referral_payouts')
+      .insert({
+        referrer_id: referrerAccount.id,
+        referred_agent_id: agentId,
+        tier,
+        usdc_amount: usdcAmount,
+        usdc_paid: false,
+        processed_by_cashier: false,
+      });
+
+    if (payoutError) {
+      console.error('[DB] Error writing agent referral payout:', payoutError.message);
+      return;
+    }
+
+    // Increment referral count on referrer account
+    const { error: countError } = await supabase
+      .from('accounts')
+      .update({ referral_count: count + 1 })
+      .eq('id', referrerAccount.id);
+
+    if (countError) {
+      console.error('[DB] Error incrementing referral count:', countError.message);
+    } else {
+      console.log(`[REFERRAL] Agent payout queued for ${referrerAccount.agent_id}: ${usdcAmount} USDC (10%)`);
+    }
+    return;
+  }
+
+  // Code not found in either table
+  console.log(`[REFERRAL] Code not found in ambassadors or accounts: ${referralCode}`);
 }
