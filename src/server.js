@@ -1,6 +1,6 @@
 import http from 'http';
 import { config } from './config.js';
-import { addToQueue, getVipCount } from './db.js';
+import { addToQueue, getVipCount, handleReferral } from './db.js';
 
 function parseBody(req) {
   return new Promise((resolve, reject) => {
@@ -56,7 +56,7 @@ async function handleAccountOpen(req, res, tier) {
   const agentId = body.agent_id;
   const referralCode = body.referral_code || null;
 
-  // No payment proof? Return 402
+  // No payment proof — return 402
   if (!paymentTx) {
     // VIP cap check BEFORE sending payment request
     if (tier === 'vip') {
@@ -85,6 +85,13 @@ async function handleAccountOpen(req, res, tier) {
 
   if (!queueEntry) {
     return sendJson(res, 500, { error: 'Failed to add to queue' });
+  }
+
+  // Handle referral non-blocking — a referral error never fails the account open
+  if (referralCode) {
+    handleReferral(referralCode, agentId, tier, amount).catch(err => {
+      console.error('[SERVER] Referral handling error (non-fatal):', err.message);
+    });
   }
 
   sendJson(res, 200, {
